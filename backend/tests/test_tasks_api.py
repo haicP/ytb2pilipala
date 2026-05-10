@@ -351,13 +351,30 @@ def test_get_system_metrics(client):
 
 def test_settings_reports_youtube_cookies_file_state(client, tmp_path, monkeypatch):
     cookies_file = tmp_path / "cookies.txt"
-    cookies_file.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    cookies_file.write_text(
+        "# Netscape HTTP Cookie File\n"
+        ".youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\tplaceholder\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("YOUTUBE_COOKIES_PATH", str(cookies_file))
 
     response = client.get("/api/settings")
 
     assert response.status_code == 200
     assert response.json()["config"]["youtube_cookies_file"] is True
+
+
+def test_settings_reports_invalid_youtube_cookies_file_as_unavailable(
+    client, tmp_path, monkeypatch
+):
+    cookies_file = tmp_path / "cookies.txt"
+    cookies_file.write_text("ffmpeg-output\n", encoding="utf-8")
+    monkeypatch.setenv("YOUTUBE_COOKIES_PATH", str(cookies_file))
+
+    response = client.get("/api/settings")
+
+    assert response.status_code == 200
+    assert response.json()["config"]["youtube_cookies_file"] is False
 
 
 def test_settings_reports_assistant_saved_llm_configuration(client, db_session):

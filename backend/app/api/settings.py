@@ -1,5 +1,4 @@
 import shutil
-from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -16,6 +15,7 @@ from backend.app.schemas import (
     SettingsPatchRequest,
     SettingsResponse,
 )
+from backend.app.youtube_cookies import is_valid_youtube_cookies_file
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -116,7 +116,7 @@ def get_settings_summary(db: Session = Depends(get_db_session)) -> SettingsRespo
             "tts_base_url": _tts_base_url_configured(settings, tts_settings, tts_provider),
             "tts_api_key": _tts_api_key_configured(settings, tts_settings, tts_provider),
             "bilibili_credential_source": bool(settings.bilibili_credential_source),
-            "youtube_cookies_file": Path(settings.youtube_cookies_path).is_file(),
+            "youtube_cookies_file": is_valid_youtube_cookies_file(settings.youtube_cookies_path),
         },
         settings=saved_settings,
     )

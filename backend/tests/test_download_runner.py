@@ -1,18 +1,21 @@
 from pathlib import Path
 
-import backend.app.runner.download as download_module
+import pytest
 from sqlalchemy.orm import sessionmaker
 
+import backend.app.runner.download as download_module
 from backend.app.domain import SourceType, TaskStatus
 from backend.app.repositories import TaskRepository
-from backend.app.runner.download import DownloadResult, DownloadRunner, YtDlpDownloader, run_download_task
-from backend.app.runner.ai_adapter import AiWorkflowAdapter
 from backend.app.runner.download import (
     DownloadResult,
     DownloadRunner,
     YtDlpDownloader,
     run_download_task,
 )
+
+
+class AiWorkflowAdapterStub:
+    pass
 
 
 class FakeDownloader:
@@ -182,7 +185,7 @@ def test_run_download_task_continues_workflow_after_thumbnail_download(
         "WorkflowRunner",
         WorkflowRunnerStub,
     )
-    monkeypatch.setattr(download_module, "AiWorkflowAdapter", lambda: AiWorkflowAdapter(storage_root=storage_root))
+    monkeypatch.setattr(download_module, "AiWorkflowAdapter", AiWorkflowAdapterStub)
 
     repo = TaskRepository(db_session)
     task = repo.create_task(SourceType.YOUTUBE, "https://youtu.be/demo")
@@ -209,7 +212,11 @@ def test_run_download_task_continues_workflow_after_thumbnail_download(
 
 def test_yt_dlp_downloader_uses_cookies_file_when_present(tmp_path, monkeypatch):
     cookies_file = tmp_path / "cookies.txt"
-    cookies_file.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    cookies_file.write_text(
+        "# Netscape HTTP Cookie File\n"
+        ".youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\tplaceholder\n",
+        encoding="utf-8",
+    )
     calls = []
 
     def fake_run(command, capture_output, text, check):
@@ -238,6 +245,81 @@ def test_yt_dlp_downloader_uses_cookies_file_when_present(tmp_path, monkeypatch)
     assert str(cookies_file) in calls[0]
 
 
+def test_yt_dlp_downloader_enables_node_js_runtime_when_available(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(command, capture_output, text, check):
+        calls.append(command)
+        task_dir = tmp_path / "artifacts" / "1"
+        (task_dir / "source.mp4").write_text("video", encoding="utf-8")
+        (task_dir / "source.jpg").write_text("thumbnail", encoding="utf-8")
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    def fake_which(binary):
+        if binary == "node":
+            return "/usr/bin/node"
+        if binary == "yt-dlp":
+            return "/usr/local/bin/yt-dlp"
+        return None
+
+    monkeypatch.setattr(download_module.shutil, "which", fake_which)
+    monkeypatch.setattr(download_module.subprocess, "run", fake_run)
+    downloader = YtDlpDownloader(
+        storage_root=tmp_path / "artifacts",
+        cookies_path=tmp_path / "missing-cookies.txt",
+    )
+
+    class TaskStub:
+        id = 1
+        input = "https://youtu.be/demo"
+
+    downloader.download(TaskStub())
+
+    js_runtime_index = calls[0].index("--js-runtimes")
+    assert calls[0][js_runtime_index + 1] == "node"
+
+
+def test_yt_dlp_downloader_rejects_invalid_cookies_file_before_running_yt_dlp(
+    tmp_path, monkeypatch
+):
+    cookies_file = tmp_path / "cookies.txt"
+    cookies_file.write_text("ffmpeg-output\n", encoding="utf-8")
+    calls = []
+
+    def fake_run(command, capture_output, text, check):
+        calls.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(download_module.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+    monkeypatch.setattr("backend.app.runner.download.subprocess.run", fake_run)
+    downloader = YtDlpDownloader(storage_root=tmp_path / "artifacts", cookies_path=cookies_file)
+
+    class TaskStub:
+        id = 1
+        input = "https://youtu.be/demo"
+
+    with pytest.raises(RuntimeError) as exc:
+        downloader.download(TaskStub())
+
+    detail = str(exc.value)
+    assert "YouTube cookies 文件不可用" in detail
+    assert "Netscape HTTP Cookie File" in detail
+    assert "ffmpeg-output" not in detail
+    assert calls == []
+
+
 def test_yt_dlp_downloader_requests_mp4_output(tmp_path, monkeypatch):
     calls = []
 
@@ -255,7 +337,10 @@ def test_yt_dlp_downloader_requests_mp4_output(tmp_path, monkeypatch):
         return Result()
 
     monkeypatch.setattr("backend.app.runner.download.subprocess.run", fake_run)
-    downloader = YtDlpDownloader(storage_root=tmp_path / "artifacts")
+    downloader = YtDlpDownloader(
+        storage_root=tmp_path / "artifacts",
+        cookies_path=tmp_path / "missing-cookies.txt",
+    )
 
     class TaskStub:
         id = 1
@@ -335,19 +420,23 @@ def test_run_download_task_hands_off_pending_youtube_task_to_workflow_runner(db_
             self.adapter = adapter
 
         def run_task(self, task_id):
-            calls.append((task_id, self.adapter.__class__.__name__))
+            calls.append((task_id, isinstance(self.adapter, AiWorkflowAdapterStub)))
 
     monkeypatch.setattr("backend.app.runner.download.SessionLocal", lambda: SessionStub())
     monkeypatch.setattr("backend.app.runner.download.TaskRepository", RepoStub)
     monkeypatch.setattr("backend.app.runner.download.YtDlpDownloader", lambda: FakeDownloader())
     monkeypatch.setattr("backend.app.runner.download.WorkflowRunner", WorkflowRunnerStub)
+    monkeypatch.setattr("backend.app.runner.download.AiWorkflowAdapter", AiWorkflowAdapterStub)
 
     run_download_task(task.id)
 
-    assert calls == [(task.id, "AiWorkflowAdapter")]
+    assert calls == [(task.id, True)]
 def test_yt_dlp_downloader_fails_fast_when_yt_dlp_is_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(download_module.shutil, "which", lambda binary: None)
-    downloader = YtDlpDownloader(storage_root=tmp_path / "artifacts")
+    downloader = YtDlpDownloader(
+        storage_root=tmp_path / "artifacts",
+        cookies_path=tmp_path / "missing-cookies.txt",
+    )
 
     class TaskStub:
         id = 1
@@ -368,7 +457,10 @@ def test_yt_dlp_downloader_fails_fast_when_js_runtime_is_missing(tmp_path, monke
         return f"/usr/bin/{binary}"
 
     monkeypatch.setattr(download_module.shutil, "which", fake_which)
-    downloader = YtDlpDownloader(storage_root=tmp_path / "artifacts")
+    downloader = YtDlpDownloader(
+        storage_root=tmp_path / "artifacts",
+        cookies_path=tmp_path / "missing-cookies.txt",
+    )
 
     class TaskStub:
         id = 1
@@ -402,7 +494,10 @@ def test_yt_dlp_downloader_wraps_youtube_challenge_failure_with_actionable_messa
 
     monkeypatch.setattr(download_module.shutil, "which", lambda binary: f"/usr/bin/{binary}")
     monkeypatch.setattr(download_module.subprocess, "run", fake_run)
-    downloader = YtDlpDownloader(storage_root=tmp_path / "artifacts")
+    downloader = YtDlpDownloader(
+        storage_root=tmp_path / "artifacts",
+        cookies_path=tmp_path / "missing-cookies.txt",
+    )
 
     class TaskStub:
         id = 1
@@ -437,7 +532,10 @@ def test_yt_dlp_downloader_prioritizes_auth_error_when_youtube_requires_sign_in(
 
     monkeypatch.setattr(download_module.shutil, "which", lambda binary: f"/usr/bin/{binary}")
     monkeypatch.setattr(download_module.subprocess, "run", fake_run)
-    downloader = YtDlpDownloader(storage_root=tmp_path / "artifacts")
+    downloader = YtDlpDownloader(
+        storage_root=tmp_path / "artifacts",
+        cookies_path=tmp_path / "missing-cookies.txt",
+    )
 
     class TaskStub:
         id = 1

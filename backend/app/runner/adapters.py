@@ -8,6 +8,7 @@ from typing import Protocol
 
 from backend.app.config import get_settings
 from backend.app.models import Task
+from backend.app.youtube_cookies import validate_youtube_cookies_file
 
 
 @dataclass(frozen=True)
@@ -353,7 +354,7 @@ class DryRunAdapter:
             task.input,
         ]
         cookies_path = Path(settings.youtube_cookies_path)
-        if cookies_path.is_file():
+        if validate_youtube_cookies_file(cookies_path).valid:
             command.extend(["--cookies", str(cookies_path)])
         process = subprocess.run(command, capture_output=True, text=True, check=False)
         if process.returncode != 0:

@@ -12,6 +12,10 @@ from backend.app.repositories import TaskRepository
 from backend.app.runner.ai_adapter import AiWorkflowAdapter
 from backend.app.runner.processing import WorkflowRunner
 from backend.app.runner.workflow import calculate_task_progress
+from backend.app.youtube_cookies import (
+    format_invalid_youtube_cookies_message,
+    validate_youtube_cookies_file,
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,8 @@ class YtDlpDownloader:
         command = [
             "yt-dlp",
             "--no-playlist",
+            "--js-runtimes",
+            self._select_js_runtime(),
             "--write-thumbnail",
             "--convert-thumbnails",
             "jpg",
@@ -56,7 +62,15 @@ class YtDlpDownloader:
             output_template.name,
             task.input,
         ]
-        if self.cookies_path.is_file():
+        cookies_validation = validate_youtube_cookies_file(self.cookies_path)
+        if cookies_validation.exists and not cookies_validation.valid:
+            raise RuntimeError(
+                format_invalid_youtube_cookies_message(
+                    self.cookies_path,
+                    cookies_validation,
+                )
+            )
+        if cookies_validation.valid:
             command.extend(["--cookies", str(self.cookies_path)])
         process = subprocess.run(command, capture_output=True, text=True, check=False)
         if process.returncode != 0:
@@ -82,6 +96,23 @@ class YtDlpDownloader:
                 "缺少可用的 JavaScript 运行时。请安装 Node.js（推荐）或其它受支持运行时，"
                 "以便 yt-dlp 处理 YouTube challenge。"
             )
+
+    @staticmethod
+    def _select_js_runtime() -> str:
+        runtimes = (
+            ("node", "node"),
+            ("deno", "deno"),
+            ("qjs", "quickjs"),
+            ("quickjs", "quickjs"),
+            ("bun", "bun"),
+        )
+        for binary, runtime in runtimes:
+            if shutil.which(binary):
+                return runtime
+        raise RuntimeError(
+            "缺少可用的 JavaScript 运行时。请安装 Node.js（推荐）或其它受支持运行时，"
+            "以便 yt-dlp 处理 YouTube challenge。"
+        )
 
     @staticmethod
     def _format_download_error(detail: str) -> str:
