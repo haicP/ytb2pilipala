@@ -1,0 +1,34 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: docker
+      DATABASE_URL: sqlite:///./data/app.db
+      API2KEY_BASE_URL: ${API2KEY_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      TTS_PROVIDER: ${TTS_PROVIDER:-mimo_v2_5_tts}
+      MIMO_API_KEY: ${MIMO_API_KEY:-}
+      MIMO_BASE_URL: ${MIMO_BASE_URL:-https://api.xiaomimimo.com/v1}
+      MIMO_TTS_MODEL: ${MIMO_TTS_MODEL:-mimo-v2.5-tts-voiceclone}
+      MIMO_TTS_VOICE: ${MIMO_TTS_VOICE:-冰糖}
+      MIMO_TTS_STYLE_PROMPT: ${MIMO_TTS_STYLE_PROMPT:-请用自然、清晰、适合中文视频解说的语气朗读。}
+      MIMO_TTS_TIMEOUT_SECONDS: ${MIMO_TTS_TIMEOUT_SECONDS:-600}
+      MIMO_TTS_CONCURRENCY: ${MIMO_TTS_CONCURRENCY:-10}
+      TTS_CONCURRENCY: ${TTS_CONCURRENCY:-10}
+      OPENAI_TTS_API_KEY: ${OPENAI_TTS_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_TTS_BASE_URL: ${OPENAI_TTS_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_TTS_MODEL: ${OPENAI_TTS_MODEL:-gpt-4o-mini-tts}
+      OPENAI_TTS_VOICE: ${OPENAI_TTS_VOICE:-alloy}
+      OPENAI_TTS_INSTRUCTIONS: ${OPENAI_TTS_INSTRUCTIONS:-}
+      OPENAI_TTS_SPEED: ${OPENAI_TTS_SPEED:-1}
+      BILIBILI_CREDENTIAL_SOURCE: ${BILIBILI_CREDENTIAL_SOURCE:-}
+      YOUTUBE_COOKIES_PATH: ${YOUTUBE_COOKIES_PATH:-./data/cookies.txt}
+      HF_HOME: ${HF_HOME:-/app/data/huggingface}
+      HF_HUB_CACHE: ${HF_HUB_CACHE:-/app/data/huggingface/hub}
+      HF_HUB_DISABLE_XET: ${HF_HUB_DISABLE_XET:-1}
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://huggingface.co}
+    volumes:
+      - ./data:/app/data
