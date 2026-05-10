@@ -39,6 +39,35 @@ docker run --rm -p 8000:8000 -v "$PWD/data:/app/data" ytb2pilipala:local
 容器镜像会构建前端静态资源，并由 FastAPI 同进程提供 API 和前端页面。运行时包含 Python 3.12、`ffmpeg`、`yt-dlp`、Node.js、npm 和 `yt-dlp-ejs`。
 为兼容 YouTube 近期的 challenge 校验，运行环境还需要可用的 JavaScript runtime，项目默认使用 `Node.js`，并安装 `yt-dlp-ejs`。
 
+## GitHub Actions 镜像
+
+仓库包含 GitHub Actions workflow：`.github/workflows/docker-image.yml`。
+
+- Pull Request：只构建 Docker 镜像，不推送。
+- `master` 分支推送：构建并推送到 GHCR，生成 `master`、`sha-<commit>` 和 `latest` 标签。
+- `v*.*.*` tag 推送：构建并推送同名版本标签。
+- 手动触发：在 GitHub Actions 页面运行 `Docker Image` workflow。
+
+镜像地址：
+
+```bash
+ghcr.io/haicp/ytb2pilipala
+```
+
+拉取并运行最新镜像：
+
+```bash
+docker pull ghcr.io/haicp/ytb2pilipala:latest
+docker run --rm -p 8000:8000 -v "$PWD/data:/app/data" ghcr.io/haicp/ytb2pilipala:latest
+```
+
+发布版本镜像：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 ## 配置
 
 复制 `.env.example` 为 `.env`，按需设置：
